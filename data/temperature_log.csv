@@ -1,0 +1,168 @@
+
+#include <stdio.h>
+#include <stdlib.h>
+#include <pigpio.h>
+
+#define LED_PIN 17
+#define FILE_NAME "temperature_log.txt"
+
+void updateLED(int warning) {
+    gpioWrite(LED_PIN, warning ? 1 : 0);
+}
+
+void showStatus(float temp, float minTemp, float maxTemp) {
+    int warning = (temp < minTemp || temp > maxTemp);
+
+    printf("\nTemperature: %.2f F\n", temp);
+    printf("System Status: %s\n",
+           warning ? "WARNING" : "NORMAL");
+    printf("Warning LED: %s\n",
+           warning ? "ON" : "OFF");
+
+    updateLED(warning);
+}
+
+void saveReading(float temp, const char *status) {
+    FILE *file = fopen(FILE_NAME, "a");
+
+    if (file == NULL) {
+        printf("Error opening file!\n");
+        return;
+    }
+
+    fprintf(file, "%.2f F - %s\n", temp, status);
+    fclose(file);
+
+    printf("Reading saved successfully.\n");
+}
+
+int main(void) {
+    float minTemp = 68.0;
+    float maxTemp = 76.0;
+    float temperature;
+    float sum = 0.0;
+    int count = 0;
+    int choice;
+
+    if (gpioInitialise() < 0) {
+        printf("GPIO initialization failed!\n");
+        return 1;
+    }
+
+    gpioSetMode(LED_PIN, PI_OUTPUT);
+    gpioWrite(LED_PIN, 0);
+
+    do {
+        printf("\n===============================\n");
+        printf(" SMART CLASSROOM COMFORT MONITOR\n");
+        printf("===============================\n");
+        printf("1. Enter Temperature\n");
+        printf("2. View Average Temperature\n");
+        printf("3. Change Acceptable Range\n");
+        printf("4. View Saved Readings\n");
+        printf("5. Exit\n");
+        printf("Current Range: %.1f F - %.1f F\n",
+               minTemp, maxTemp);
+        printf("Enter your choice: ");
+
+        if (scanf("%d", &choice) != 1) {
+            printf("Invalid input!\n");
+            while (getchar() != '\n');
+            continue;
+        }
+
+        switch (choice) {
+
+            case 1: {
+                printf("Enter temperature in Fahrenheit: ");
+
+                if (scanf("%f", &temperature) != 1) {
+                    printf("Invalid temperature!\n");
+                    while (getchar() != '\n');
+                    break;
+                }
+
+                int warning =
+                    (temperature < minTemp ||
+                     temperature > maxTemp);
+
+                showStatus(temperature, minTemp, maxTemp);
+
+                saveReading(temperature,
+                            warning ? "WARNING" : "NORMAL");
+
+                sum += temperature;
+                count++;
+                break;
+            }
+
+            case 2:
+                if (count == 0) {
+                    printf("No readings recorded yet.\n");
+                } else {
+                    printf("Total Readings: %d\n", count);
+                    printf("Average Temperature: %.2f F\n",
+                           sum / count);
+                }
+                break;
+
+            case 3: {
+                float newMin, newMax;
+
+                printf("Enter new minimum temperature: ");
+                if (scanf("%f", &newMin) != 1) {
+                    printf("Invalid input!\n");
+                    while (getchar() != '\n');
+                    break;
+                }
+
+                printf("Enter new maximum temperature: ");
+                if (scanf("%f", &newMax) != 1) {
+                    printf("Invalid input!\n");
+                    while (getchar() != '\n');
+                    break;
+                }
+
+                if (newMin >= newMax) {
+                    printf("Minimum must be less than maximum!\n");
+                } else {
+                    minTemp = newMin;
+                    maxTemp = newMax;
+                    printf("Temperature range updated!\n");
+                }
+                break;
+            }
+
+            case 4: {
+                FILE *file = fopen(FILE_NAME, "r");
+                char line[200];
+
+                if (file == NULL) {
+                    printf("No saved readings found.\n");
+                    break;
+                }
+
+                printf("\n--- Saved Temperature Readings ---\n");
+
+                while (fgets(line, sizeof(line), file)) {
+                    printf("%s", line);
+                }
+
+                fclose(file);
+                break;
+            }
+
+            case 5:
+                printf("Exiting system...\n");
+                gpioWrite(LED_PIN, 0);
+                break;
+
+            default:
+                printf("Invalid choice! Try again.\n");
+        }
+
+    } while (choice != 5);
+
+    gpioTerminate();
+    return 0;
+}
